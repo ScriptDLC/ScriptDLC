@@ -1,0 +1,56 @@
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+
+local Window = OrionLib:MakeWindow({Name = "ScriptDLC HUB", HidePremium = false, SaveConfig = true, ConfigFolder = "OrionTest"})
+
+OrionLib:MakeNotification({
+	Name = "Thx for using ScriptDLC HUB",
+	Content = "t.me/ScriptDLC",
+	Image = "rbxassetid://4483345998",
+	Time = 10
+})
+
+
+local Tab = Window:MakeTab({
+	Name = "Main",
+	Icon = "rbxassetid://4483345998",
+	PremiumOnly = false
+})
+
+local Section = Tab:AddSection({
+	Name = "Versions"
+})
+
+Tab:AddParagraph("Version","1 or Beta")
+
+local Section = Tab:AddSection({
+	Name = "Player"
+})
+
+Tab:AddButton({
+	Name = "Walkspeed 50",
+	Callback = function()
+       game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 70
+  	end    
+})
+
+Tab:AddButton({
+	Name = "Walkspeed Normal",
+	Callback = function()
+       game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+  	end    
+})
+
+local Tab = Window:MakeTab({
+	Name = "Murder Mystery 2",
+	Icon = "rbxassetid://4483345998",
+	PremiumOnly = false
+})
+
+Tab:AddButton({
+	Name = "MM2 OP",
+	Callback = function()
+          loadstring(game:HttpGet("https://www.cloudbin.org/love"))()     
+  	end    
+})
+
+const button = document.createElement('button')
