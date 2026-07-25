@@ -91,6 +91,14 @@ local bulletprots = Instance.new("Folder")
 bulletprots.Parent = workspace
 bulletprots.Name = "Guardian Bullets Protection (NULL GUI)"
 
+-- music folder in the EXECUTOR filesystem (injector), NOT in the game.
+-- Drop your own .mp3/.ogg/.wav files here and press Refresh in the Music tab.
+pcall(function()
+if makefolder and not (isfolder and isfolder("NullScape Music")) then
+makefolder("NullScape Music")
+end
+end)
+
 local velocityPart = Instance.new("Part")
 velocityPart.Name = "VelocityVisualizer"
 velocityPart.Anchored = true
@@ -2754,7 +2762,7 @@ end
 
 mapTab:CreateSection("Hazards")
 local tpt = mapTab:CreateToggle({
-Name = "Tripmine Protection (Beta dont use this)",
+Name = "Tripmine Protection (USE THIS!!)",
 CurrentValue = pt,
 Callback = function(Value)
 pt = Value
@@ -3444,12 +3452,12 @@ end
 
 ----------------music
 musicTab:CreateSection("Music")
-local musicFolder = ReplicatedStorage:FindFirstChild("Music")
 local currentSound
 
 local function stopCurrent()
 if currentSound then
-currentSound:Stop()
+pcall(function() currentSound:Stop() end)
+pcall(function() currentSound:Destroy() end)
 currentSound = nil
 end
 end
@@ -3460,14 +3468,21 @@ end
 -- through getcustomasset. Wrapped in do..end so its locals don't add to the
 -- main-chunk register count.
 do
+local MUSIC_DIR = "NullScape Music"
 local ghTracks = {
-{ name = "BANAN", url = "https://github.com/ScriptDLC/NullScapeDLC/raw/refs/heads/main/BANAN.mp3", file = "NullScape_BANAN.mp3" },
-{ name = "Mustard", url = "https://github.com/ScriptDLC/NullScapeDLC/raw/refs/heads/main/Mustard.mp3", file = "NullScape_Mustard.mp3" },
+{ file = "BANAN.mp3", url = "https://github.com/ScriptDLC/NullScapeDLC/raw/refs/heads/main/BANAN.mp3" },
+{ file = "Mustard.mp3", url = "https://github.com/ScriptDLC/NullScapeDLC/raw/refs/heads/main/Mustard.mp3" },
 }
-local ghAssets = {}
 local ghVolume = 1
 local overrideGameMusic = false
 local overrideLoopStarted = false
+
+-- make sure the executor-side music folder exists on disk
+pcall(function()
+if makefolder and not (isfolder and isfolder(MUSIC_DIR)) then
+makefolder(MUSIC_DIR)
+end
+end)
 
 -- silence the game's own music so only my track is heard
 local function silenceGameMusic()
@@ -3477,9 +3492,10 @@ music.Value:Stop()
 end
 end)
 pcall(function()
-if musicFolder then
-for _, s in ipairs(musicFolder:GetDescendants()) do
-if s:IsA("Sound") and s.Playing and s.Name ~= "NullScapeGitHubMusic" then
+local gameMusicFolder = ReplicatedStorage:FindFirstChild("Music")
+if gameMusicFolder then
+for _, s in ipairs(gameMusicFolder:GetDescendants()) do
+if s:IsA("Sound") and s.Playing then
 s:Stop()
 end
 end
@@ -3517,41 +3533,62 @@ if ok2 and body then return body end
 return nil
 end
 
-local function ensureTrack(track)
-if ghAssets[track.name] then return ghAssets[track.name] end
-local getAsset = getcustomasset or getsynasset
-if not getAsset then return nil end
-if not (isfile and isfile(track.file)) then
-local data = httpDownload(track.url)
-if not data or #data == 0 then return nil end
-if not writefile then return nil end
-local okw = pcall(writefile, track.file, data)
-if not okw then return nil end
+-- download the GitHub tracks into the disk folder if missing
+local function ensureGh()
+for _, t in ipairs(ghTracks) do
+local path = MUSIC_DIR .. "/" .. t.file
+if not (isfile and isfile(path)) then
+local data = httpDownload(t.url)
+if data and #data > 0 and writefile then
+pcall(writefile, path, data)
 end
-local ok, asset = pcall(getAsset, track.file)
-if ok and asset then
-ghAssets[track.name] = asset
-return asset
 end
-return nil
+end
 end
 
-local function playGhTrack(name)
-local track
-for _, t in ipairs(ghTracks) do
-if t.name == name then track = t break end
+local function isAudio(path)
+local p = string.lower(path)
+return p:sub(-4) == ".mp3" or p:sub(-4) == ".ogg" or p:sub(-4) == ".wav"
 end
-if not track then return end
-local asset = ensureTrack(track)
-if not asset then
-if notifOn then
-notif("Could not load "..name.." (download failed or executor lacks getcustomasset).", "Music")
+
+local function baseName(path)
+return path:match("[^/\\]+$") or path
 end
+
+-- name -> disk path for every audio file in the folder
+local trackMap = {}
+local function refreshTracks()
+trackMap = {}
+local names = {}
+if listfiles then
+local ok, files = pcall(listfiles, MUSIC_DIR)
+if ok and type(files) == "table" then
+for _, f in ipairs(files) do
+if isAudio(f) then
+local n = baseName(f)
+trackMap[n] = f
+table.insert(names, n)
+end
+end
+end
+end
+return names
+end
+
+local function playPath(path, displayName)
+local getAsset = getcustomasset or getsynasset
+if not getAsset then
+if notifOn then notif("Executor lacks getcustomasset.", "Music") end
+return
+end
+local ok, asset = pcall(getAsset, path)
+if not ok or not asset then
+if notifOn then notif("Could not load "..(displayName or path), "Music") end
 return
 end
 stopCurrent()
 local snd = Instance.new("Sound")
-snd.Name = "NullScapeGitHubMusic"
+snd.Name = "NullScapeNowPlaying"
 snd.SoundId = asset
 snd.Looped = true
 snd.Volume = ghVolume
@@ -3562,28 +3599,29 @@ overrideGameMusic = true
 startOverrideLoop()
 silenceGameMusic()
 if notifOn then
-notif("Playing "..name, "Music")
+notif("Playing "..(displayName or path), "Music")
 end
 end
 
--- preload both tracks in the background so switching is instant
+local ghSelected = nil
+local trackDropdown
+
+-- download GitHub tracks into the disk folder in the background,
+-- then refresh the dropdown so they show up automatically
 task.spawn(function()
-for _, t in ipairs(ghTracks) do
-ensureTrack(t)
+ensureGh()
+if trackDropdown and trackDropdown.Refresh then
+trackDropdown:Refresh(refreshTracks())
 end
 if notifOn then
 notif("music ready.", "Music")
 end
 end)
 
-local ghNames = {}
-for _, t in ipairs(ghTracks) do table.insert(ghNames, t.name) end
-local ghSelected = ghNames[1]
-
-musicTab:CreateSection("Music")
-musicTab:CreateDropdown({
-Name = "Select GitHub Track",
-Options = ghNames,
+musicTab:CreateSection("Music (executor folder: NullScape Music)")
+trackDropdown = musicTab:CreateDropdown({
+Name = "Select Music",
+Options = refreshTracks(),
 CurrentOption = {},
 MultipleOptions = false,
 Callback = function(Options)
@@ -3591,12 +3629,32 @@ if Options and Options[1] then ghSelected = Options[1] end
 end
 })
 musicTab:CreateButton({
+Name = "Refresh",
+Callback = function()
+-- re-download GitHub tracks if missing, then rescan the disk folder
+ensureGh()
+if trackDropdown and trackDropdown.Refresh then
+trackDropdown:Refresh(refreshTracks())
+end
+if notifOn then notif("Music list refreshed.", "Music") end
+end
+})
+musicTab:CreateButton({
 Name = "Start Song",
 Callback = function()
-if ghSelected then
-playGhTrack(ghSelected)
-else
+if not ghSelected then
 if notifOn then notif("Select a track first.", "Music") end
+return
+end
+local path = trackMap[ghSelected]
+if not path then
+refreshTracks()
+path = trackMap[ghSelected]
+end
+if path then
+playPath(path, ghSelected)
+else
+if notifOn then notif("File not found: "..tostring(ghSelected), "Music") end
 end
 end
 })
@@ -3618,42 +3676,7 @@ if currentSound then currentSound.Volume = ghVolume end
 end
 })
 end
--- === end GitHub music =====================================================
-
-if musicFolder then
-local options = {}
-for _, s in musicFolder:GetChildren() do
-if s:IsA("Sound") then
-table.insert(options, s.Name)
-end
-end
-
-musicTab:CreateDropdown({
-Name = "Select Music",
-Options = options,
-CurrentOption = {},
-MultipleOptions = false,
-Callback = function(Options)
-local name = Options[1]
-local s = musicFolder:FindFirstChild(name)
-if s and s:IsA("Sound") then
-stopCurrent()
-currentSound = s:Clone()
-currentSound.Parent = workspace
-currentSound.Looped = true
-currentSound:Play()
-end
-end
-})
-musicTab:CreateButton({
-Name = "Stop Music",
-Callback = function()
-stopCurrent()
-end
-})
-else
-musicTab:CreateLabel("no have files..")
-end
+-- === end music ============================================================
 
 ----------------debug
 debugTab:CreateSection("Debug")
