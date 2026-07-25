@@ -3815,16 +3815,24 @@ local _, hb = getRoot(char)
 for _, trip in getActiveTripmines() do
 protectTripmine(trip)
 
--- аварийный барьер: если игрок попал в радиус мины — мгновенно поднимаем над ней
+-- knockback: если игрок попал в радиус мины — отбрасываем его в сторону (НЕ вверх)
 if trip and trip.Parent then
 local mp = trip:IsA("Model") and trip:GetPivot().Position or trip.Position
 local ms = trip:IsA("Model") and trip:GetExtentsSize() or trip.Size
-local flatGap = Vector2.new(root.Position.X - mp.X, root.Position.Z - mp.Z).Magnitude
+local flatDir = Vector3.new(root.Position.X - mp.X, 0, root.Position.Z - mp.Z)
+local flatGap = flatDir.Magnitude
 local vGap = math.abs(root.Position.Y - mp.Y)
-if flatGap <= math.max(ms.X, ms.Z)/2 + TRIPMINE_PADDING and vGap <= ms.Y/2 + TRIPMINE_PADDING then
-local safeY = mp.Y + ms.Y/2 + TRIPMINE_PADDING + 12
-root.Position = Vector3.new(root.Position.X, safeY, root.Position.Z)
-if hb then hb.Position = root.Position end
+-- отдельный меньший радиус отталкивания, чтобы проще собирать подарки
+local KB_PADDING = 6
+local dangerR = math.max(ms.X, ms.Z)/2 + KB_PADDING
+if flatGap <= dangerR and vGap <= ms.Y/2 + KB_PADDING then
+local dir = (flatGap > 0.1) and flatDir.Unit or Vector3.new(1, 0, 0)
+-- выталкиваем за пределы радиуса на текущей высоте, чтобы нельзя было дотронуться
+local target = Vector3.new(mp.X, root.Position.Y, mp.Z) + dir * (dangerR + 6)
+root.Position = target
+if hb then hb.Position = target end
+-- отбрасывающий импульс наружу (в сторону, без подъёма)
+root.AssemblyLinearVelocity = dir * 80
 end
 end
 end
